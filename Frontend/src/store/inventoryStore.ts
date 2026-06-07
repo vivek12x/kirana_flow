@@ -51,39 +51,54 @@ export const useInventoryStore = create<InventoryState>((set) => ({
     products: typeof window !== 'undefined' ? getStoredProducts() : [],
 
     fetchProducts: async () => {
-        const products = getStoredProducts();
-        set({ products });
+        try {
+            const res = await fetch('/api/products');
+            if (res.ok) {
+                const products = await res.json();
+                set({ products });
+            }
+        } catch (e) {
+            console.error('Failed to fetch products from API', e);
+        }
     },
 
     addProduct: async (product) => {
-        const products = getStoredProducts();
-        const newProduct: Product = {
-            ...product,
-            id: Math.random().toString(36).substr(2, 9),
-            cost_price: product.cost_price ?? product.costPrice,
-            selling_price: product.selling_price ?? product.sellingPrice,
-            expiry_date: product.expiry_date ?? product.expiryDate
-        };
-        const updated = [...products, newProduct];
-        saveProducts(updated);
-        set({ products: updated });
+        try {
+            const res = await fetch('/api/products', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(product)
+            });
+            if (res.ok) {
+                const newProduct = await res.json();
+                set((state) => ({ products: [...state.products, newProduct] }));
+            } else {
+                console.error('Failed to add product to DB');
+            }
+        } catch (e) {
+            console.error('Failed to add product', e);
+        }
     },
 
     updateProduct: async (id, updates) => {
-        const products = getStoredProducts();
-        const updated = products.map((p) => {
-            if (p.id === id) {
-                return {
-                    ...p,
-                    ...updates,
-                    cost_price: updates.cost_price !== undefined ? updates.cost_price : (updates.costPrice !== undefined ? updates.costPrice : p.cost_price),
-                    selling_price: updates.selling_price !== undefined ? updates.selling_price : (updates.sellingPrice !== undefined ? updates.sellingPrice : p.selling_price),
-                    expiry_date: updates.expiry_date !== undefined ? updates.expiry_date : (updates.expiryDate !== undefined ? updates.expiryDate : p.expiry_date)
-                };
+        try {
+            const res = await fetch(`/api/products/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updates)
+            });
+            if (res.ok) {
+                const updatedProduct = await res.json();
+                set((state) => ({
+                    products: state.products.map((p) =>
+                        p.id === id ? updatedProduct : p
+                    )
+                }));
+            } else {
+                console.error('Failed to update product in DB');
             }
-            return p;
-        });
-        saveProducts(updated);
-        set({ products: updated });
+        } catch (e) {
+            console.error('Failed to update product', e);
+        }
     },
 }));

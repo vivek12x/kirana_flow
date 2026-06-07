@@ -49,64 +49,77 @@ export const useCustomerStore = create<CustomerState>((set) => ({
   customers: typeof window !== 'undefined' ? getStoredCustomers() : [],
 
   fetchCustomers: async () => {
-    const customers = getStoredCustomers();
-    set({ customers });
+    try {
+      const res = await fetch('/api/customers');
+      if (res.ok) {
+        const customers = await res.json();
+        set({ customers });
+      }
+    } catch (e) {
+      console.error('Failed to fetch customers from API', e);
+    }
   },
 
   addCustomer: async (name, phone, balance, debtStartDate) => {
-    const customers = getStoredCustomers();
-    const newCustomer: Customer = {
-      id: Math.random().toString(36).substr(2, 9),
-      name,
-      phone,
-      balance,
-      credit_score: 100,
-      debtStartDate,
-      history: []
-    };
-    const updated = [...customers, newCustomer];
-    saveCustomers(updated);
-    set({ customers: updated });
+    try {
+      const res = await fetch('/api/customers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, phone, balance, debtStartDate })
+      });
+      if (res.ok) {
+        const newCustomer = await res.json();
+        set((state) => ({ customers: [...state.customers, newCustomer] }));
+      } else {
+        console.error('Failed to add customer to DB');
+      }
+    } catch (e) {
+      console.error('Failed to add customer', e);
+    }
   },
 
   deductBalance: async (name, amount) => {
-    const customers = getStoredCustomers();
-    let found = false;
-    const updated = customers.map((customer) => {
-      if (customer.name.toLowerCase() === name.toLowerCase()) {
-        found = true;
-        const newBalance = Math.max(0, customer.balance - amount);
-        return {
-          ...customer,
-          balance: newBalance,
-          lastPaymentDate: new Date().toISOString().split('T')[0]
-        };
+    try {
+      const res = await fetch('/api/customers/deduct', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, amount })
+      });
+      if (res.ok) {
+        const updatedCustomer = await res.json();
+        set((state) => ({
+          customers: state.customers.map((c) =>
+            c.id === updatedCustomer.id ? updatedCustomer : c
+          )
+        }));
+      } else {
+        const errData = await res.json();
+        alert(errData.detail || "Failed to process deduction. Check if customer exists.");
       }
-      return customer;
-    });
-
-    if (!found) {
-      alert("Failed to process deduction. Check if customer exists.");
-      return;
+    } catch (e) {
+      console.error('Failed to deduct customer balance', e);
     }
-
-    saveCustomers(updated);
-    set({ customers: updated });
   },
 
   updateCustomer: async (id, updates) => {
-    const customers = getStoredCustomers();
-    const updated = customers.map((c) => {
-      if (c.id === id) {
-        return {
-          ...c,
-          ...updates,
-          credit_score: updates.credit_score !== undefined ? updates.credit_score : (updates.creditScore !== undefined ? updates.creditScore : c.credit_score)
-        };
+    try {
+      const res = await fetch(`/api/customers/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+      if (res.ok) {
+        const updatedCustomer = await res.json();
+        set((state) => ({
+          customers: state.customers.map((c) =>
+            c.id === id ? updatedCustomer : c
+          )
+        }));
+      } else {
+        console.error('Failed to update customer in DB');
       }
-      return c;
-    });
-    saveCustomers(updated);
-    set({ customers: updated });
+    } catch (e) {
+      console.error('Failed to update customer', e);
+    }
   },
 }));

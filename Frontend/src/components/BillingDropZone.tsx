@@ -1,14 +1,9 @@
 import { useState, useCallback } from 'react';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { useCustomerStore } from '../store/customerStore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Upload, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-// Note: In a real app, this should be an env var. 
-// Assuming user might provide it or it's set in environment.
-const API_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY || "";
-console.log('API Key from ENV is set:', !!API_KEY);
 export function BillingDropZone() {
     const [isDragging, setIsDragging] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
@@ -26,68 +21,38 @@ export function BillingDropZone() {
     }, []);
 
     const processFile = useCallback(async (file: File) => {
-        if (!API_KEY) {
-            setMessage({ type: 'error', text: 'Gemini API Key is missing. Please set GEMINI_API_KEY.' });
-            return;
-        }
-
         setIsProcessing(true);
         setMessage(null);
 
         try {
-            const genAI = new GoogleGenerativeAI(API_KEY);
-            const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+            const formData = new FormData();
+            formData.append("file", file);
 
-            // Convert file to base64
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
+            const res = await fetch("/api/parse-bill", {
+                method: "POST",
+                body: formData,
+            });
 
-            reader.onloadend = async () => {
-                const base64Data = (reader.result as string).split(',')[1];
+            if (!res.ok) {
+                const errData = await res.json();
+                throw new Error(errData.detail || "Failed to scan bill");
+            }
 
-                const prompt = `
-          Analyze this image of a bill/receipt. 
-          Extract the "name" of the person associated with the bill and the total "amount".
-          Return ONLY a JSON object with keys "name" (string) and "amount" (number).
-          Example: { "name": "John Doe", "amount": 150.50 }
-          If you cannot find a name or amount, return null.
-        `;
+            const data = await res.json();
 
-                const imagePart = {
-                    inlineData: {
-                        data: base64Data,
-                        mimeType: file.type,
-                    },
-                };
-
-                const result = await model.generateContent([prompt, imagePart]);
-                const response = await result.response;
-                const text = response.text();
-
-                try {
-                    // Clean up code blocks if present
-                    const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
-                    const data = JSON.parse(cleanText);
-
-                    if (data && data.name && data.amount) {
-                        await deductBalance(data.name, data.amount);
-                        setMessage({
-                            type: 'success',
-                            text: `Processed bill for ${data.name}. Deducted ₹${data.amount}.`
-                        });
-                    } else {
-                        setMessage({ type: 'error', text: 'Could not extract valid name and amount from the image.' });
-                    }
-                } catch (e) {
-                    console.error("Parsing error", e);
-                    setMessage({ type: 'error', text: 'Failed to parse AI response.' });
-                }
-                setIsProcessing(false);
-            };
-
-        } catch (error) {
+            if (data && data.name && data.amount) {
+                await deductBalance(data.name, data.amount);
+                setMessage({
+                    type: 'success',
+                    text: `Processed bill for ${data.name}. Deducted ₹${data.amount}.`
+                });
+            } else {
+                setMessage({ type: 'error', text: 'Could not extract valid name and amount from the image.' });
+            }
+        } catch (error: any) {
             console.error("AI Error", error);
-            setMessage({ type: 'error', text: 'Error processing image with AI.' });
+            setMessage({ type: 'error', text: error.message || 'Error processing image with AI.' });
+        } finally {
             setIsProcessing(false);
         }
     }, [deductBalance]);
